@@ -25,12 +25,12 @@ class KalmanFilter:
         self.robot_vel = 1.0                     
         self.robot_omega = 0.001                              
         self.time_interval = 0.1
-        self.human_pose_from_robot = np.array([1.0, 0.0, 0.0, 1.0, 0.0]).T # 人の座標(x, y, z, x', y'), 速度はworld座標系で見たときの速度
+        self.human_pose_from_robot = np.array([1.0, 0.0, 0.0, 1.0, 1.0]).T # 人の座標(x, y, z, x', y'), 速度はworld座標系で見たときの速度
         self.human_pose_from_world = np.array([0.0, 1.0]).T # 人座標(x, y, z, x', y')
         self.z_from_world = np.array([0.0, 0.0]).T 
         self.estimation_from_world = np.array([0.0, 0.0]).T 
         self.w_mean = 0.0
-        self.sigma_w = 0.2 # 人の速度に対するノイズ
+        self.sigma_w = 0.00 # 人の速度に対するノイズ
         self.v_mean = 0.0
         self.sigma_v = 0.5 # 観測ノイズ
 
@@ -151,10 +151,10 @@ class KalmanFilter:
         # 入力による位置の変化f(x, y, z, x', y')
         self.belief.mean = self.calc_human_pose_from_robot(mean_t_1[0], mean_t_1[1], \
              mean_t_1[2], mean_t_1[3], mean_t_1[4], self.robot_omega, self.robot_vel, self.time_interval) # 人の座標、速度を更新
-        M = self.matM() # 入力のばらつき(x, yの速度のばらつき)
-        F = self.matF() # xがずれたときに移動後のxがどれだけずれるか
-        A = self.matA() # 人への入力u(x, yの速度)がずれたとき、xがどれだけずれるか 
-        self.belief.cov = np.dot(F, np.dot(cov_t_1, F.T)) + np.dot(A, np.dot(M, A.T))
+        # M = self.matM() # 入力のばらつき(x, yの速度のばらつき)
+        # F = self.matF() # xがずれたときに移動後のxがどれだけずれるか
+        # A = self.matA() # 人への入力u(x, yの速度)がずれたとき、xがどれだけずれるか 
+        # self.belief.cov = np.dot(F, np.dot(cov_t_1, F.T)) + np.dot(A, np.dot(M, A.T))
     
     # 
     def observation_update(self, mean_t_1, cov_t_1, t):
@@ -170,14 +170,16 @@ class KalmanFilter:
     def cals_l_and_phai(cls, human_pose, robot_pose):
         x = human_pose[1]
         y = human_pose[0]
-        diff = np.array([x,y])
-        phi = math.atan2(diff[0], diff[1])
+        diff = np.array([y,x])
+        phi = math.pi/2  - math.atan2(diff[0], diff[1])
+        print("human_x, y", x, y)
+        print("origi_phi", math.degrees(phi))
         while phi >= np.pi: phi -= 2*np.pi
-        while phi < -np.pi: phi  += 2*np.pi
+        while phi < -np.pi: phi += 2*np.pi
         return np.hypot(*diff), phi # hypot: 距離を返す
 
     def one_step(self, i, elems, ax1):
-        while elems: elems.pop().remove()
+        # while elems: elems.pop().remove()
         ## 実際の値 ########################################################################################
         ## 状態方程式で解いた現在のpos(x, y, z, x', y')、誤差が乗ってる実際のデータ
         self.robot_pose = self.robot_state_transition(self.robot_vel, self.robot_omega, self.time_interval, self.robot_pose)  # ロボットの姿勢を更新
@@ -188,30 +190,37 @@ class KalmanFilter:
         ## 推測 ########################################################################################    
         ## 推定した人の動き、平均と分散を求める、誤差が乗っていない推定したデータ
         self.motion_update(self.belief.mean, self.belief.cov, i)
+        print("human_pose_from_robot", self.belief.mean[0], self.belief.mean[1])
         # 観測方程式：カルマンゲインK
-        self.observation_update(self.belief.mean, self.belief.cov, i)
+        # self.observation_update(self.belief.mean, self.belief.cov, i)
 
         ## 描画前の処理 ########################################################################################
         self.human_pose_from_robot[3] += self.robot_vel
+        self.belief.mean[3] += self.robot_vel
         l, phi = self.cals_l_and_phai(self.human_pose_from_robot, self.robot_pose)
         # ノイズ有りのリアルな人の位置
-        self.human_pose_from_world = np.array([ self.robot_pose[0] + l*math.cos( -phi+ self.robot_pose[2]), \
-             self.robot_pose[1] + l*math.sin( -phi + self.robot_pose[2]) ])
+        # self.human_pose_from_world = np.array([ self.robot_pose[0] - self.human_pose_from_robot[1], \
+        #                                         self.robot_pose[1] + self.human_pose_from_robot[0] ])
+        # phi = math.pi/2 - phi
+        self.human_pose_from_world = np.array([ self.robot_pose[0] + l*math.cos( phi+ self.robot_pose[2]), \
+             self.robot_pose[1] + l*math.sin( phi + self.robot_pose[2]) ])
+        print(self.robot_pose[0], self.robot_pose[1], math.degrees(self.robot_pose[2]))
+        print("l, phi", l, math.degrees(phi))
+        print("human_pose_from_world", self.human_pose_from_world[0], self.human_pose_from_world[1])
+        print("---------------------")
         # ノイズ有りのリアルな観測結果
         self.z_from_world = np.array([ self.robot_pose[0] + self.z[1], \
              self.robot_pose[1] + self.z[0] ])
         # 推定した結果
-        self.estimation_from_world = np.array([ self.robot_pose[0] + self.belief.mean[1], \
+        self.estimation_from_world = np.array([ self.robot_pose[0] - self.belief.mean[1], \
              self.robot_pose[1] + self.belief.mean[0] ])
 
         if self.robot_visible_range(l, phi):
-            zx = self.human_pose_from_world[0]
-            zy = self.human_pose_from_world[1]
+            zx = self.estimation_from_world[0]
+            zy = self.estimation_from_world[1]
             elems += ax1.plot([self.robot_pose[0], zx], [self.robot_pose[1], zy], color="pink")
             self.robot_omega = phi/self.time_interval * self.robot_omega_pgain ## theta/t * gain
             self.robot_vel = l * self.robot_vel * self.vel_pgain
-            # self.robot_omega = z[1]/self.time_interval*self.robot_omega_pgain
-            # self.robot_vel = self.robot_accel*self.time_interval*z[0]*self.vel_pgain
 
         ## 描画 ########################################################################################
         x, y, theta = self.robot_pose
@@ -221,15 +230,15 @@ class KalmanFilter:
         elems.append(ax1.add_patch(c_robot))                                # ロボットの位置を示す円の描画
         elems += ax1.plot(self.human_pose_from_world[0], \
         self.human_pose_from_world[1], "blue", marker = 'o', markersize = 8) # 人の位置を表す☆を描画
-        elems += ax1.plot(self.z_from_world[0], \
-        self.z_from_world[1], "red", marker = '*', markersize = 8) # 観測された人の位置を表す☆を描画
+        # elems += ax1.plot(self.z_from_world[0], \
+        # self.z_from_world[1], "red", marker = '*', markersize = 8) # 観測された人の位置を表す☆を描画
         elems += ax1.plot(self.estimation_from_world[0], \
         self.estimation_from_world[1], "green", marker = '*', markersize = 8) # 推定された人の位置を表す☆を描画
 
         ## 誤差計算
         self.sum_observation += self.get_distance(self.z_from_world[0], self.z_from_world[1], self.human_pose_from_world[0], self.human_pose_from_world[1])
         self.sum_estimation  += self.get_distance(self.estimation_from_world[0], self.estimation_from_world[1], self.human_pose_from_world[0], self.human_pose_from_world[1])
-        print("観測値の誤差: " , self.sum_observation, "推定値の誤差: ", self.sum_estimation)
+        # print("観測値の誤差: " , self.sum_observation, "推定値の誤差: ", self.sum_estimation)
 
     def map_draw(self):
         fig = plt.figure(figsize=(10,10)) 
@@ -241,7 +250,7 @@ class KalmanFilter:
         ax.set_ylabel("Y", fontsize=10)
         
         elems = []
-        self.ani = anm.FuncAnimation(fig, self.one_step, fargs=(elems, ax), frames=101, interval=200, repeat=False) # 100[m/s]
+        self.ani = anm.FuncAnimation(fig, self.one_step, fargs=(elems, ax), frames=4, interval=2, repeat=False) # 100[m/s]
         plt.show()
         
 if __name__ == "__main__":
