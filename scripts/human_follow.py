@@ -30,9 +30,9 @@ class KalmanFilter:
         self.z_from_world = np.array([0.0, 1.0]).T 
         self.estimation_from_world = np.array([0.0, 1.0]).T 
         self.w_mean = 0.0
-        self.sigma_w = 2.0 # 人の速度に対するノイズ
+        self.sigma_w = 0.3 # 人の速度に対するノイズ
         self.v_mean = 0.0
-        self.sigma_v = 1.0 # 観測ノイズ
+        self.sigma_v = 0.3 # 観測ノイズ
 
         self.z = np.array([ 0.0 , 0.0 , 0.0])
 
@@ -90,7 +90,7 @@ class KalmanFilter:
                           [-sin_, cos_] ])
 
     def matH(self):
-        return np.array([ [1.0, 0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0, 0.0] ])
+        return np.array([ [1.0, 0.0, 0.0, self.time_interval, 0.0], [0.0, 1.0, 0.0, 0.0, self.time_interval], [0.0, 0.0, 1.0, 0.0, 0.0] ])
 
     def matQ(self):
         return np.array([ [self.sigma_v**2, 0.0, 0.0], [0.0, self.sigma_v**2, 0.0], [0.0, 0.0, self.sigma_v**2] ])
@@ -98,8 +98,11 @@ class KalmanFilter:
     # 誤差楕円
     def sigma_ellipse(self, p, cov, n):  
         eig_vals, eig_vec = np.linalg.eig(cov)
-        ang = math.atan2(eig_vec[:,0][1], eig_vec[:,0][0])/math.pi*180
-        return Ellipse(p, width=2*n*math.sqrt(eig_vals[0]), height=2*n*math.sqrt(eig_vals[1]), fill=False, color="green", alpha=0.5)
+        xy = self.estimation_from_world[0:2]
+        print("cov", cov)
+        print("eig_vals[1], eig_vals[0]", eig_vals[1], eig_vals[0])
+        print("-----------------")
+        return Ellipse(xy, width=2*n*math.sqrt(np.real(eig_vals[1])), height=2*n*math.sqrt(np.real(eig_vals[0])), fill=False, color="green", alpha=0.5)
 
     def robot_nose(self, x, y, theta):
         xn = x + self.r * math.cos(theta) 
@@ -159,6 +162,7 @@ class KalmanFilter:
         F = self.matF() # xがずれたときに移動後のxがどれだけずれるか
         A = self.matA() # 人への入力u(x, yの速度)がずれたとき、xがどれだけずれるか 
         self.belief.cov = np.dot(F, np.dot(cov_t_1, F.T)) + np.dot(A, np.dot(M, A.T))
+        # print("motion_update cov", self.belief.cov)
     
     # 
     def observation_update(self, mean_t_1, cov_t_1, t):
@@ -169,9 +173,10 @@ class KalmanFilter:
         z_error = self.z - np.dot(self.mat_h(), mean_t_1)
         self.belief.mean += np.dot(K, z_error) # 平均値更新
         self.belief.cov = (I - K.dot(H)).dot(self.belief.cov) # 共分散更新
+        # print("observation_update cov", self.belief.cov)
         
     @classmethod
-    def cals_l_and_phai(cls, human_pose, robot_pose):
+    def cals_l_and_phi(cls, human_pose, robot_pose):
         x = human_pose[1]
         y = human_pose[0]
         if x == 0.0: x += 1e-10
@@ -183,61 +188,50 @@ class KalmanFilter:
         return np.hypot(*diff), phi # hypot: 距離を返す
 
     def one_step(self, i, elems, ax1):
+        while elems: elems.pop().remove()
         ## 描画 ########################################################################################
         x, y, theta = self.robot_pose
         xn, yn = self.robot_nose(x, y, theta)
         c_robot = patches.Circle(xy=(x, y), radius=self.r, fill=False, color=self.color) 
+        e = self.sigma_ellipse(self.belief.mean, self.belief.cov, 2)
         elems += ax1.plot([x,xn], [y,yn], color=self.color)                 # ロボットの向きを示す線分の描画
         elems.append(ax1.add_patch(c_robot))                                # ロボットの位置を示す円の描画
-        elems += ax1.plot(self.human_pose_from_world[0], \
-        self.human_pose_from_world[1], "blue", marker = 'o', markersize = 8) # 人の位置を表すoを描画
-        elems += ax1.plot(self.z_from_world[0], \
-        self.z_from_world[1], "red", marker = '*', markersize = 8) # 観測された人の位置を表す☆を描画
-        elems += ax1.plot(self.estimation_from_world[0], \
-        self.estimation_from_world[1], "green", marker = '*', markersize = 8) # 推定された人の位置を表す☆を描画
-        l, phi = self.cals_l_and_phai(self.human_pose_from_robot, self.robot_pose)
+        elems += ax1.plot(self.human_pose_from_world[0], self.human_pose_from_world[1], "blue", marker = 'o', markersize = 8) # 人の位置を表すoを描画
+        elems += ax1.plot(self.z_from_world[0], self.z_from_world[1], "red", marker = '*', markersize = 8) # 観測された人の位置を表す☆を描画
+        elems += ax1.plot(self.estimation_from_world[0], self.estimation_from_world[1], "green", marker = '*', markersize = 8) # 推定された人の位置を表す☆を描画
+        l, phi = self.cals_l_and_phi(self.belief.mean, self.robot_pose)
+        elems.append(ax1.add_patch(e))
         print(math.degrees(phi))
         if self.robot_visible_range(l, phi):
-            zx = self.estimation_from_world[0]
-            zy = self.estimation_from_world[1]
+            zx     = self.estimation_from_world[0]
+            zy     = self.estimation_from_world[1]
             elems += ax1.plot([self.robot_pose[0], zx], [self.robot_pose[1], zy], color="pink")
             self.robot_omega = phi/self.time_interval * self.robot_omega_pgain ## theta/t * gain
-            self.robot_vel = l * self.robot_vel * self.vel_pgain
+            self.robot_vel   = l * self.robot_vel * self.vel_pgain
 
-        # while elems: elems.pop().remove()
         ## 実際の値 ########################################################################################
         ## 状態方程式で解いた現在のpos(x, y, z, x', y')、誤差が乗ってる実際のデータ
-        self.robot_pose = self.robot_state_transition(self.robot_vel, self.robot_omega, self.time_interval, self.robot_pose)  # ロボットの姿勢を更新
+        self.robot_pose            = self.robot_state_transition(self.robot_vel, self.robot_omega, self.time_interval, self.robot_pose)  # ロボットの姿勢を更新
         self.human_pose_from_robot = self.human_state_transition()
         ## 観測方程式で解いた現在の観測値、ノイズ有り(x, y, theta)
         self.z = self.state_observation()
         ## 推測 ########################################################################################    
         ## 推定した人の動き、平均と分散を求める、誤差が乗っていない推定したデータ
         self.motion_update(self.belief.mean, self.belief.cov, i)
-        print("human_pose_from_robot", self.belief.mean[0], self.belief.mean[1])
         # 観測方程式：カルマンゲインK
         self.observation_update(self.belief.mean, self.belief.cov, i)
 
         ## 描画前の処理 ########################################################################################
         self.human_pose_from_robot[3] += self.robot_vel
-        self.belief.mean[3] += self.robot_vel
-        l, phi = self.cals_l_and_phai(self.human_pose_from_robot, self.robot_pose)
+        self.belief.mean[3]           += self.robot_vel
+        l, phi = self.cals_l_and_phi(self.human_pose_from_robot, self.robot_pose)
         
         # ノイズ有りのリアルな人の位置
-        self.human_pose_from_world = np.array([ self.robot_pose[0] - self.human_pose_from_robot[1], \
-                                                self.robot_pose[1] + self.human_pose_from_robot[0] ])
-        # self.human_pose_from_world = np.array([ self.robot_pose[0] + l*math.cos( phi+ self.robot_pose[2]), \
-        #      self.robot_pose[1] + l*math.sin( phi + self.robot_pose[2]) ])
-        print(self.robot_pose[0], self.robot_pose[1], math.degrees(self.robot_pose[2]))
-        print("l, phi", l, math.degrees(phi))
-        print("human_pose_from_world", self.human_pose_from_world[0], self.human_pose_from_world[1])
-        print("---------------------")
+        self.human_pose_from_world = np.array([ self.robot_pose[0] - self.human_pose_from_robot[1], self.robot_pose[1] + self.human_pose_from_robot[0] ])
         # ノイズ有りのリアルな観測結果
-        self.z_from_world = np.array([ self.robot_pose[0] - self.z[1], \
-             self.robot_pose[1] + self.z[0] ])
+        self.z_from_world          = np.array([ self.robot_pose[0] - self.z[1], self.robot_pose[1] + self.z[0] ])
         # 推定した結果
-        self.estimation_from_world = np.array([ self.robot_pose[0] - self.belief.mean[1], \
-             self.robot_pose[1] + self.belief.mean[0] ])
+        self.estimation_from_world = np.array([ self.robot_pose[0] - self.belief.mean[1], self.robot_pose[1] + self.belief.mean[0] ])
 
         ## 誤差計算
         self.sum_observation += self.get_distance(self.z_from_world[0], self.z_from_world[1], self.human_pose_from_world[0], self.human_pose_from_world[1])
