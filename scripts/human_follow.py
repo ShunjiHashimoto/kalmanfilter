@@ -30,9 +30,9 @@ class KalmanFilter:
         self.z_from_world = np.array([0.0, 1.0]).T 
         self.estimation_from_world = np.array([0.0, 1.0]).T 
         self.w_mean = 0.0
-        self.sigma_w = 0.3 # 人の速度に対するノイズ
+        self.sigma_w = 0.4 # 人の速度に対するノイズ
         self.v_mean = 0.0
-        self.sigma_v = 0.3 # 観測ノイズ
+        self.sigma_v = 0.4 # 観測ノイズ
 
         self.z = np.array([ 0.0 , 0.0 , 0.0])
 
@@ -100,7 +100,7 @@ class KalmanFilter:
         eig_vals, eig_vec = np.linalg.eig(cov)
         xy = self.estimation_from_world[0:2]
         print("cov", cov)
-        print("eig_vals[1], eig_vals[0]", eig_vals[1], eig_vals[0])
+        print("eig_vals[1], eig_vals[0]", eig_vals)
         print("-----------------")
         return Ellipse(xy, width=2*n*math.sqrt(np.real(eig_vals[1])), height=2*n*math.sqrt(np.real(eig_vals[0])), fill=False, color="green", alpha=0.5)
 
@@ -193,7 +193,7 @@ class KalmanFilter:
         x, y, theta = self.robot_pose
         xn, yn = self.robot_nose(x, y, theta)
         c_robot = patches.Circle(xy=(x, y), radius=self.r, fill=False, color=self.color) 
-        e = self.sigma_ellipse(self.belief.mean, self.belief.cov, 2)
+        e = self.sigma_ellipse(self.belief.mean[0:2], self.belief.cov[0:2, 0:2], 2)
         elems += ax1.plot([x,xn], [y,yn], color=self.color)                 # ロボットの向きを示す線分の描画
         elems.append(ax1.add_patch(c_robot))                                # ロボットの位置を示す円の描画
         elems += ax1.plot(self.human_pose_from_world[0], self.human_pose_from_world[1], "blue", marker = 'o', markersize = 8) # 人の位置を表すoを描画
@@ -248,7 +248,7 @@ class KalmanFilter:
         ax.set_ylabel("Y", fontsize=10)
         
         elems = []
-        self.ani = anm.FuncAnimation(fig, self.one_step, fargs=(elems, ax), frames=40, interval=100, repeat=False) # 100[m/s]
+        self.ani = anm.FuncAnimation(fig, self.one_step, fargs=(elems, ax), frames=40, interval=500, repeat=False) # 100[m/s]
         plt.show()
         
 if __name__ == "__main__":
