@@ -11,3 +11,7 @@ Kalmanfilterを用いて人物追従を実装する
 - ekf .py     
 拡張カルマンフィルタ(EKF)の問題を解いた例  
 [問題](https://koukyo1213.hatenablog.com/entry/KalmanFilter#:~:text=%24%24-,EKF%E3%81%AE%E4%BE%8B%E9%A1%8C,-EKF%E3%82%92%E4%BD%BF)
+
+- human_follow.py     
+人物追従制御  
+[問題](https://www.jstage.jst.go.jp/article/jrsj/28/9/28_9_1091/_pdf)
