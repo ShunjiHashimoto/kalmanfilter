@@ -23,16 +23,16 @@ class KalmanFilter:
         self.r = 0.2            
         self.color = "black"   
         self.robot_vel = 1.0                     
-        self.robot_omega = 0.001                              
+        self.robot_omega = 0.01                              
         self.time_interval = 0.1
-        self.human_pose_from_robot = np.array([1.0, 0.0, 0.0, 1.0, 1.0]).T # 人の座標(x, y, z, x', y'), 速度はworld座標系で見たときの速度
+        self.human_pose_from_robot = np.array([1.0, 0.0, 0.0, 1.0, 0.0]).T # 人の座標(x, y, z, x', y'), 速度はworld座標系で見たときの速度
         self.human_pose_from_world = np.array([0.0, 1.0]).T # 人座標(x, y, z, x', y')
         self.z_from_world = np.array([0.0, 1.0]).T 
         self.estimation_from_world = np.array([0.0, 1.0]).T 
         self.w_mean = 0.0
-        self.sigma_w = 0.4 # 人の速度に対するノイズ
+        self.sigma_w = 0.2 # 人の速度に対するノイズ
         self.v_mean = 0.0
-        self.sigma_v = 0.4 # 観測ノイズ
+        self.sigma_v = 0.5 # 観測ノイズ
 
         self.z = np.array([ 0.0 , 0.0 , 0.0])
 
@@ -99,9 +99,6 @@ class KalmanFilter:
     def sigma_ellipse(self, p, cov, n):  
         eig_vals, eig_vec = np.linalg.eig(cov)
         xy = self.estimation_from_world[0:2]
-        print("cov", cov)
-        print("eig_vals[1], eig_vals[0]", eig_vals)
-        print("-----------------")
         return Ellipse(xy, width=2*n*math.sqrt(np.real(eig_vals[1])), height=2*n*math.sqrt(np.real(eig_vals[0])), fill=False, color="green", alpha=0.5)
 
     def robot_nose(self, x, y, theta):
@@ -162,7 +159,6 @@ class KalmanFilter:
         F = self.matF() # xがずれたときに移動後のxがどれだけずれるか
         A = self.matA() # 人への入力u(x, yの速度)がずれたとき、xがどれだけずれるか 
         self.belief.cov = np.dot(F, np.dot(cov_t_1, F.T)) + np.dot(A, np.dot(M, A.T))
-        # print("motion_update cov", self.belief.cov)
     
     # 
     def observation_update(self, mean_t_1, cov_t_1, t):
@@ -173,7 +169,6 @@ class KalmanFilter:
         z_error = self.z - np.dot(self.mat_h(), mean_t_1)
         self.belief.mean += np.dot(K, z_error) # 平均値更新
         self.belief.cov = (I - K.dot(H)).dot(self.belief.cov) # 共分散更新
-        # print("observation_update cov", self.belief.cov)
         
     @classmethod
     def cals_l_and_phi(cls, human_pose, robot_pose):
@@ -201,7 +196,6 @@ class KalmanFilter:
         elems += ax1.plot(self.estimation_from_world[0], self.estimation_from_world[1], "green", marker = '*', markersize = 8) # 推定された人の位置を表す☆を描画
         l, phi = self.cals_l_and_phi(self.belief.mean, self.robot_pose)
         elems.append(ax1.add_patch(e))
-        print(math.degrees(phi))
         if self.robot_visible_range(l, phi):
             zx     = self.estimation_from_world[0]
             zy     = self.estimation_from_world[1]
@@ -237,18 +231,19 @@ class KalmanFilter:
         self.sum_observation += self.get_distance(self.z_from_world[0], self.z_from_world[1], self.human_pose_from_world[0], self.human_pose_from_world[1])
         self.sum_estimation  += self.get_distance(self.estimation_from_world[0], self.estimation_from_world[1], self.human_pose_from_world[0], self.human_pose_from_world[1])
         print("観測値の誤差: " , self.sum_observation, "推定値の誤差: ", self.sum_estimation)
+        ax1.legend(["Robot", "Human_Pos", "Observed_Human_Pos", "Estimated_Human_Pos"])
 
     def map_draw(self):
         fig = plt.figure(figsize=(10,10)) 
         ax = fig.add_subplot(111)
         ax.set_aspect('equal')
-        ax.set_xlim(-15, 15)
-        ax.set_ylim(-15, 15)
+        ax.set_xlim(-10, 10)
+        ax.set_ylim(-10, 10)
         ax.set_xlabel("X", fontsize=10)
         ax.set_ylabel("Y", fontsize=10)
         
         elems = []
-        self.ani = anm.FuncAnimation(fig, self.one_step, fargs=(elems, ax), frames=40, interval=500, repeat=False) # 100[m/s]
+        self.ani = anm.FuncAnimation(fig, self.one_step, fargs=(elems, ax), frames=41, interval=700, repeat=False) # 100[m/s]
         plt.show()
         
 if __name__ == "__main__":
